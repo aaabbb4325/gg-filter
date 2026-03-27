@@ -4,7 +4,7 @@ const { TextEncoder, TextDecoder } = require("util");
 const fs = require("fs");
 const path = require("path");
 const goguardiancats = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "json/goguardian.json"), "utf8")
+  fs.readFileSync(path.join(__dirname, "/goguardian.json"), "utf8")
 );
 
 async function goguardian(urlToCheck) {
