@@ -212,7 +212,7 @@
                 };
 
                 console.log("Sending request to GoGuardian API...");
-                const apiResponse = await fetch("https://panther.goguardian.com/api/v2/categories", {
+                const apiResponse = await fetch("https://panther.goguardian.com/api/v1/ext/fullurl/categories?url=", {
                     method: "POST",
                     headers,
                     body,
