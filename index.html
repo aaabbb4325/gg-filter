@@ -26,9 +26,9 @@
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-direction: column;
         }
         input[type="text"] {
-            flex: 1;
             padding: 10px;
             border: 1px solid #444;
             border-radius: 4px;
@@ -39,7 +39,12 @@
         input[type="text"]::placeholder {
             color: #888;
         }
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
         button {
+            flex: 1;
             padding: 10px 20px;
             background-color: #007bff;
             color: white;
@@ -99,6 +104,12 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .info {
+            color: #888;
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -108,10 +119,18 @@
         <div class="input-group">
             <input 
                 type="text" 
+                id="tokenInput" 
+                placeholder="Paste your GoGuardian bearer token here"
+            >
+            <input 
+                type="text" 
                 id="urlInput" 
                 placeholder="Enter a URL (e.g., https://example.com)"
             >
-            <button id="checkBtn">Check</button>
+            <div class="button-group">
+                <button id="checkBtn">Check URL</button>
+            </div>
+            <div class="info">Paste this into the token box ccd522cc-ba45-4554-b0d8-567ebc8c38a3</div>
         </div>
 
         <div class="loading" id="loading">
@@ -122,7 +141,6 @@
         <div class="result" id="result"></div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script>
         // GoGuardian categories mapping
         const goguardiancats = {
@@ -145,10 +163,10 @@
             "17": ["Music", false],
             "18": ["Educational", false],
             "19": ["Business", false],
-            "20": ["Technology", false],
-            "21": ["Uncatgorized", false]
+            "20": ["Technology", false]
         };
 
+        const tokenInput = document.getElementById("tokenInput");
         const urlInput = document.getElementById("urlInput");
         const checkBtn = document.getElementById("checkBtn");
         const resultDiv = document.getElementById("result");
@@ -159,78 +177,14 @@
             if (e.key === "Enter") checkURL();
         });
 
-        function concatUint8(...arrays) {
-            let total = arrays.reduce((s, a) => s + a.length, 0);
-            let out = new Uint8Array(total);
-            let offset = 0;
-            for (const a of arrays) {
-                out.set(a, offset);
-                offset += a.length;
-            }
-            return out;
-        }
-
-        function md5Bytes(data) {
-            const hash = CryptoJS.MD5(CryptoJS.enc.Utf8.parse(data)).toString();
-            return new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-        }
-
-        function evpBytesToKey(password, salt) {
-            let derived = new Uint8Array(0);
-            let prev = new Uint8Array(0);
-
-            while (derived.length < 48) {
-                const input = concatUint8(prev, password, salt);
-                prev = md5Bytes(String.fromCharCode(...input));
-                derived = concatUint8(derived, prev);
-            }
-
-            return {
-                key: derived.slice(0, 32),
-                iv: derived.slice(32, 48),
-            };
-        }
-
-        async function decryptOpenSSL(encryptedB64, password) {
-            try {
-                // Clean the base64 string
-                const cleanB64 = encryptedB64.trim().replace(/\s/g, '');
-                
-                const raw = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
-
-                const header = new TextDecoder().decode(raw.slice(0, 8));
-                if (header !== "Salted__") {
-                    throw new Error("Invalid OpenSSL salt header");
-                }
-
-                const salt = raw.slice(8, 16);
-                const ciphertext = raw.slice(16);
-
-                const passwordBytes = new TextEncoder().encode(password);
-                const { key, iv } = evpBytesToKey(passwordBytes, salt);
-
-                const cryptoKey = await crypto.subtle.importKey(
-                    "raw",
-                    key,
-                    { name: "AES-CBC" },
-                    false,
-                    ["decrypt"]
-                );
-
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: "AES-CBC", iv },
-                    cryptoKey,
-                    ciphertext
-                );
-
-                return new TextDecoder().decode(decrypted);
-            } catch (err) {
-                throw new Error("Decryption failed: " + err.message);
-            }
-        }
-
         async function checkURL() {
+            const token = tokenInput.value.trim();
             const url = urlInput.value.trim();
+
+            if (!token) {
+                showResult("Please enter a GoGuardian token", "error");
+                return;
+            }
 
             if (!url) {
                 showResult("Please enter a URL", "error");
@@ -244,42 +198,6 @@
             checkBtn.disabled = true;
 
             try {
-                const PUBLIC_KEY = "82fdbf93-6361-454a-9460-e03bc2baaeff";
-                const PASSWORD_PREFIX = "59afe4da-9a47-4cff-b024-c9e8fab53eb1";
-                const password = PASSWORD_PREFIX + PUBLIC_KEY;
-
-                // Fetch the encrypted token with CORS proxy
-                const lolUrl = "https://raw.githubusercontent.com/supercoolgenizy/superman/refs/heads/main/lol?" + Date.now();
-                
-                let lolText = "";
-                try {
-                    const tokenResponse = await fetch(lolUrl);
-                    if (!tokenResponse.ok) {
-                        throw new Error(`GitHub returned ${tokenResponse.status}`);
-                    }
-                    lolText = await tokenResponse.text();
-                } catch (err) {
-                    // Try with CORS Proxy
-                    const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(lolUrl);
-                    const tokenResponse = await fetch(proxyUrl);
-                    if (!tokenResponse.ok) {
-                        throw new Error(`Failed to fetch token: ${tokenResponse.status}`);
-                    }
-                    lolText = await tokenResponse.text();
-                }
-
-                if (!lolText || lolText.length < 10) {
-                    throw new Error("Invalid token data received from GitHub");
-                }
-
-                // Decrypt the token
-                const token = await decryptOpenSSL(lolText, password);
-
-                if (!token || token.length < 10) {
-                    throw new Error("Decryption produced invalid token");
-                }
-
-                // Prepare the request
                 const body = JSON.stringify({
                     cleanUrl: fullURL.replace(/^https?:\/\//, ""),
                     rawUrl: fullURL,
@@ -293,7 +211,7 @@
                     "accept": "*/*",
                 };
 
-                // Check the URL with GoGuardian API
+                console.log("Sending request to GoGuardian API...");
                 const apiResponse = await fetch("https://panther.goguardian.com/api/v2/categories", {
                     method: "POST",
                     headers,
@@ -301,11 +219,15 @@
                     mode: "cors"
                 });
 
+                console.log("API Response status:", apiResponse.status);
+
                 if (!apiResponse.ok) {
-                    throw new Error(`GoGuardian API returned ${apiResponse.status}`);
+                    throw new Error(`GoGuardian API returned ${apiResponse.status} - Token may be invalid or expired`);
                 }
 
                 const apiData = await apiResponse.json();
+                console.log("API Data:", apiData);
+
                 const cats = Array.isArray(apiData.cats) ? apiData.cats : [];
 
                 let pairs = cats
@@ -315,7 +237,6 @@
                         blocked: goguardiancats[cat][1],
                     }));
 
-                // Shuffle pairs
                 for (let i = pairs.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
