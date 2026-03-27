@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoGuardian URL Checker</title>
+    <title>GoGuardian Filter Checker Web</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 600px;
             margin: 50px auto;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #0A0A0A;
         }
         .container {
             background-color: white;
@@ -56,6 +56,8 @@
             padding: 15px;
             border-radius: 4px;
             display: none;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
         .result.blocked {
             background-color: #f8d7da;
@@ -95,7 +97,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>GoGuardian URL Checker</h1>
+        <h1>GoGuardian Filter Checker</h1>
         
         <div class="input-group">
             <input 
@@ -114,7 +116,32 @@
         <div class="result" id="result"></div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script>
+        // GoGuardian categories mapping
+        const goguardiancats = {
+            "1": ["Malware", true],
+            "2": ["Phishing", true],
+            "3": ["Spam", true],
+            "4": ["Adult Content", true],
+            "5": ["Violence", true],
+            "6": ["Weapons", true],
+            "7": ["Gambling", true],
+            "8": ["Drugs", true],
+            "9": ["Illegal Content", true],
+            "10": ["Hacking", true],
+            "11": ["Social Media", false],
+            "12": ["Games", false],
+            "13": ["Shopping", false],
+            "14": ["News", false],
+            "15": ["Video", false],
+            "16": ["Streaming", false],
+            "17": ["Music", false],
+            "18": ["Educational", false],
+            "19": ["Business", false],
+            "20": ["Technology", false]
+        };
+
         const urlInput = document.getElementById("urlInput");
         const checkBtn = document.getElementById("checkBtn");
         const resultDiv = document.getElementById("result");
@@ -125,6 +152,77 @@
             if (e.key === "Enter") checkURL();
         });
 
+        function md5(str) {
+            return CryptoJS.MD5(str).toString();
+        }
+
+        function concatUint8(...arrays) {
+            let total = arrays.reduce((s, a) => s + a.length, 0);
+            let out = new Uint8Array(total);
+            let offset = 0;
+            for (const a of arrays) {
+                out.set(a, offset);
+                offset += a.length;
+            }
+            return out;
+        }
+
+        function md5Bytes(data) {
+            const hash = CryptoJS.MD5(CryptoJS.enc.Utf8.parse(data)).toString();
+            return new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        }
+
+        function evpBytesToKey(password, salt) {
+            let derived = new Uint8Array(0);
+            let prev = new Uint8Array(0);
+
+            while (derived.length < 48) {
+                const input = concatUint8(prev, password, salt);
+                prev = md5Bytes(String.fromCharCode(...input));
+                derived = concatUint8(derived, prev);
+            }
+
+            return {
+                key: derived.slice(0, 32),
+                iv: derived.slice(32, 48),
+            };
+        }
+
+        async function decryptOpenSSL(encryptedB64, password) {
+            try {
+                const raw = Uint8Array.from(atob(encryptedB64), (c) => c.charCodeAt(0));
+
+                const header = new TextDecoder().decode(raw.slice(0, 8));
+                if (header !== "Salted__") {
+                    throw new Error("Invalid OpenSSL salt header");
+                }
+
+                const salt = raw.slice(8, 16);
+                const ciphertext = raw.slice(16);
+
+                const passwordBytes = new TextEncoder().encode(password);
+                const { key, iv } = evpBytesToKey(passwordBytes, salt);
+
+                const cryptoKey = await crypto.subtle.importKey(
+                    "raw",
+                    key,
+                    { name: "AES-CBC" },
+                    false,
+                    ["decrypt"]
+                );
+
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: "AES-CBC", iv },
+                    cryptoKey,
+                    ciphertext
+                );
+
+                return new TextDecoder().decode(decrypted);
+            } catch (err) {
+                throw new Error("Decryption failed: " + err.message);
+            }
+        }
+
         async function checkURL() {
             const url = urlInput.value.trim();
 
@@ -133,7 +231,6 @@
                 return;
             }
 
-            // Add protocol if missing
             const fullURL = url.startsWith("http") ? url : "https://" + url;
 
             loadingDiv.style.display = "block";
@@ -141,27 +238,69 @@
             checkBtn.disabled = true;
 
             try {
-                const response = await fetch("/api.js", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ url: fullURL }),
+                const PUBLIC_KEY = "82fdbf93-6361-454a-9460-e03bc2baaeff";
+                const PASSWORD_PREFIX = "59afe4da-9a47-4cff-b024-c9e8fab53eb1";
+                const password = PASSWORD_PREFIX + PUBLIC_KEY;
+
+                // Fetch the encrypted token
+                const lolUrl = "https://raw.githubusercontent.com/supercoolgenizy/superman/refs/heads/main/lol?" + Date.now();
+                
+                const tokenResponse = await fetch(lolUrl);
+                const lolText = await tokenResponse.text();
+
+                // Decrypt the token
+                const token = await decryptOpenSSL(lolText, password);
+
+                // Prepare the request
+                const body = JSON.stringify({
+                    cleanUrl: fullURL.replace(/^https?:\/\//, ""),
+                    rawUrl: fullURL,
                 });
 
-                const data = await response.json();
+                const headers = {
+                    "authorization": `Bearer ${token}`,
+                    "extension-version": "4.1.210",
+                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+                    "content-type": "text/plain;charset=UTF-8",
+                    "accept": "*/*",
+                };
 
-                if (data.error) {
-                    showResult(data.error, "error");
-                } else {
-                    const status = data.blocked ? "blocked" : "allowed";
-                    const message = data.blocked 
-                        ? `🚫 BLOCKED\n\nCategories: ${data.categories}` 
-                        : `✅ UNBLOCKED\n\nCategories: ${data.categories || "None"}`;
-                    showResult(message, status);
+                // Check the URL with GoGuardian API
+                const apiResponse = await fetch("https://panther.goguardian.com/api/v2/categories", {
+                    method: "POST",
+                    headers,
+                    body,
+                    mode: "cors"
+                });
+
+                const apiData = await apiResponse.json();
+                const cats = Array.isArray(apiData.cats) ? apiData.cats : [];
+
+                let pairs = cats
+                    .filter((cat) => goguardiancats[cat])
+                    .map((cat) => ({
+                        name: goguardiancats[cat][0],
+                        blocked: goguardiancats[cat][1],
+                    }));
+
+                // Shuffle pairs
+                for (let i = pairs.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
                 }
+
+                const catsName = pairs.map((p) => p.name);
+                const shouldBlocked = pairs.some((p) => p.blocked);
+
+                const status = shouldBlocked ? "blocked" : "allowed";
+                const message = shouldBlocked 
+                    ? `🚫 BLOCKED\n\nCategories: ${catsName.join(", ")}` 
+                    : `✅ ALLOWED\n\nCategories: ${catsName.length > 0 ? catsName.join(", ") : "None"}`;
+                showResult(message, status);
+
             } catch (err) {
-                showResult("Error checking URL: " + err.message, "error");
+                console.error("Error:", err);
+                showResult("Error checking URL:\n" + err.message, "error");
             } finally {
                 loadingDiv.style.display = "none";
                 checkBtn.disabled = false;
