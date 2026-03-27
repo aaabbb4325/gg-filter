@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoGuardian Filter Checker Web</title>
+    <title>GoGuardian URL Checker</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 600px;
             margin: 50px auto;
             padding: 20px;
-            background-color: #0A0A0A;
+            background-color: #000000;
         }
         .container {
-            background-color: white;
+            background-color: #1a1a1a;
             padding: 30px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
         }
         h1 {
-            color: #333;
+            color: #ffffff;
             text-align: center;
         }
         .input-group {
@@ -30,9 +30,14 @@
         input[type="text"] {
             flex: 1;
             padding: 10px;
-            border: 1px solid #ddd;
+            border: 1px solid #444;
             border-radius: 4px;
             font-size: 14px;
+            background-color: #2a2a2a;
+            color: #ffffff;
+        }
+        input[type="text"]::placeholder {
+            color: #888;
         }
         button {
             padding: 10px 20px;
@@ -48,7 +53,7 @@
             background-color: #0056b3;
         }
         button:disabled {
-            background-color: #ccc;
+            background-color: #555;
             cursor: not-allowed;
         }
         .result {
@@ -58,29 +63,30 @@
             display: none;
             white-space: pre-wrap;
             word-wrap: break-word;
+            font-family: monospace;
         }
         .result.blocked {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
+            background-color: #3d1f1f;
+            border: 1px solid #8b3a3a;
+            color: #ff6b6b;
         }
         .result.allowed {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
+            background-color: #1f3d1f;
+            border: 1px solid #3a8b3a;
+            color: #6bff6b;
         }
         .result.error {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
+            background-color: #3d3d1f;
+            border: 1px solid #8b8b3a;
+            color: #ffff6b;
         }
         .loading {
             text-align: center;
-            color: #666;
+            color: #888;
             display: none;
         }
         .spinner {
-            border: 4px solid #f3f3f3;
+            border: 4px solid #444;
             border-top: 4px solid #007bff;
             border-radius: 50%;
             width: 20px;
@@ -97,7 +103,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>GoGuardian Filter Checker</h1>
+        <h1>GoGuardian URL Checker</h1>
         
         <div class="input-group">
             <input 
@@ -139,7 +145,8 @@
             "17": ["Music", false],
             "18": ["Educational", false],
             "19": ["Business", false],
-            "20": ["Technology", false]
+            "20": ["Technology", false],
+            "21": ["Uncatgorized", false]
         };
 
         const urlInput = document.getElementById("urlInput");
@@ -151,10 +158,6 @@
         urlInput.addEventListener("keypress", (e) => {
             if (e.key === "Enter") checkURL();
         });
-
-        function md5(str) {
-            return CryptoJS.MD5(str).toString();
-        }
 
         function concatUint8(...arrays) {
             let total = arrays.reduce((s, a) => s + a.length, 0);
@@ -190,7 +193,10 @@
 
         async function decryptOpenSSL(encryptedB64, password) {
             try {
-                const raw = Uint8Array.from(atob(encryptedB64), (c) => c.charCodeAt(0));
+                // Clean the base64 string
+                const cleanB64 = encryptedB64.trim().replace(/\s/g, '');
+                
+                const raw = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
 
                 const header = new TextDecoder().decode(raw.slice(0, 8));
                 if (header !== "Salted__") {
@@ -242,14 +248,36 @@
                 const PASSWORD_PREFIX = "59afe4da-9a47-4cff-b024-c9e8fab53eb1";
                 const password = PASSWORD_PREFIX + PUBLIC_KEY;
 
-                // Fetch the encrypted token
+                // Fetch the encrypted token with CORS proxy
                 const lolUrl = "https://raw.githubusercontent.com/supercoolgenizy/superman/refs/heads/main/lol?" + Date.now();
                 
-                const tokenResponse = await fetch(lolUrl);
-                const lolText = await tokenResponse.text();
+                let lolText = "";
+                try {
+                    const tokenResponse = await fetch(lolUrl);
+                    if (!tokenResponse.ok) {
+                        throw new Error(`GitHub returned ${tokenResponse.status}`);
+                    }
+                    lolText = await tokenResponse.text();
+                } catch (err) {
+                    // Try with CORS proxy
+                    const proxyUrl = "https://cors-anywhere.herokuapp.com/" + lolUrl;
+                    const tokenResponse = await fetch(proxyUrl);
+                    if (!tokenResponse.ok) {
+                        throw new Error(`Failed to fetch token: ${tokenResponse.status}`);
+                    }
+                    lolText = await tokenResponse.text();
+                }
+
+                if (!lolText || lolText.length < 10) {
+                    throw new Error("Invalid token data received from GitHub");
+                }
 
                 // Decrypt the token
                 const token = await decryptOpenSSL(lolText, password);
+
+                if (!token || token.length < 10) {
+                    throw new Error("Decryption produced invalid token");
+                }
 
                 // Prepare the request
                 const body = JSON.stringify({
@@ -272,6 +300,10 @@
                     body,
                     mode: "cors"
                 });
+
+                if (!apiResponse.ok) {
+                    throw new Error(`GoGuardian API returned ${apiResponse.status}`);
+                }
 
                 const apiData = await apiResponse.json();
                 const cats = Array.isArray(apiData.cats) ? apiData.cats : [];
