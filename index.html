@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoGuardian URL Checker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .result.blocked {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .result.allowed {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GoGuardian URL Checker</h1>
+        
+        <div class="input-group">
+            <input 
+                type="text" 
+                id="urlInput" 
+                placeholder="Enter a URL (e.g., https://example.com)"
+            >
+            <button id="checkBtn">Check</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            Checking URL...
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        const urlInput = document.getElementById("urlInput");
+        const checkBtn = document.getElementById("checkBtn");
+        const resultDiv = document.getElementById("result");
+        const loadingDiv = document.getElementById("loading");
+
+        checkBtn.addEventListener("click", checkURL);
+        urlInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") checkURL();
+        });
+
+        async function checkURL() {
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                showResult("Please enter a URL", "error");
+                return;
+            }
+
+            // Add protocol if missing
+            const fullURL = url.startsWith("http") ? url : "https://" + url;
+
+            loadingDiv.style.display = "block";
+            resultDiv.style.display = "none";
+            checkBtn.disabled = true;
+
+            try {
+                const response = await fetch("/api/check-url", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ url: fullURL }),
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showResult(data.error, "error");
+                } else {
+                    const status = data.blocked ? "blocked" : "allowed";
+                    const message = data.blocked 
+                        ? `🚫 BLOCKED\n\nCategories: ${data.categories}` 
+                        : `✅ UNBLOCKED\n\nCategories: ${data.categories || "None"}`;
+                    showResult(message, status);
+                }
+            } catch (err) {
+                showResult("Error checking URL: " + err.message, "error");
+            } finally {
+                loadingDiv.style.display = "none";
+                checkBtn.disabled = false;
+            }
+        }
+
+        function showResult(message, type) {
+            resultDiv.textContent = message;
+            resultDiv.className = "result " + type;
+            resultDiv.style.display = "block";
+        }
+    </script>
+</body>
+</html>
