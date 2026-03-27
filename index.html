@@ -259,8 +259,8 @@
                     }
                     lolText = await tokenResponse.text();
                 } catch (err) {
-                    // Try with CORS proxy
-                    const proxyUrl = "https://cors-anywhere.herokuapp.com/" + lolUrl;
+                    // Try with CORS Proxy
+                    const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(lolUrl);
                     const tokenResponse = await fetch(proxyUrl);
                     if (!tokenResponse.ok) {
                         throw new Error(`Failed to fetch token: ${tokenResponse.status}`);
